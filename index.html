@@ -1,0 +1,287 @@
+ 
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Courier_kassa</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f6ef;color:#10291d;font:16px system-ui,sans-serif}
+main{max-width:540px;margin:auto;padding:18px 16px 110px}
+button,input,select{font:inherit}
+button{border:0;border-radius:24px;padding:13px;cursor:pointer;background:#e8ebe2;color:inherit;font-weight:700}
+header,.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+h1{font-size:25px;margin:20px 0 4px}
+h2{font-size:18px}
+small{opacity:.75}
+section{background:white;border-radius:24px;padding:16px;margin:12px 0}
+.lime{background:#d2ff3e}
+.dark{background:#10291d;color:white}
+.yellow{background:#ffda38}
+.money{font-size:38px;font-weight:850;margin:10px 0}
+.pill{background:#dff3da;padding:12px;border-radius:14px;font-size:13px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.tiles div{background:#ffffffb0;border-radius:14px;padding:10px 5px;text-align:center;font-size:12px}
+.tiles b{display:block;font-size:14px}
+.actions{display:flex;gap:10px}
+.actions button{flex:1;text-align:left;min-height:85px}
+.op{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #eee}
+.op span:nth-child(2){flex:1}
+.op button{padding:8px}
+.negative{color:#b53b35}
+nav{position:fixed;bottom:0;left:0;right:0;background:#f5f6ef;display:flex;justify-content:center;gap:5px;padding:10px 4px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -2px 15px #0001}
+nav button{font-size:11px;background:none;padding:8px}
+nav .plus{background:#10291d;color:#d2ff3e;font-size:30px;width:52px;height:52px;border-radius:50%;padding:0}
+dialog{border:0;border-radius:30px 30px 0 0;width:min(100%,540px);max-width:none;max-height:92vh;margin:auto auto 0;padding:22px;color:#10291d}
+dialog::backdrop{background:#0006}
+input,select{width:100%;padding:15px;border:2px solid #10291d;border-radius:16px;background:#f5f6ef;margin:8px 0}
+.wide{width:100%;margin-top:12px}
+.categories{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.categories button{border-radius:18px;min-height:72px}
+.selected{background:#d2ff3e;outline:2px solid #10291d}
+.bars{display:flex;align-items:end;gap:8px;height:110px}
+.bar{flex:1;text-align:center;font-size:10px}
+.bar i{display:block;background:#d2ff3e;border-radius:8px 8px 0 0;min-height:3px;margin:4px 0}
+progress{width:100%;accent-color:#10291d}
+a{color:inherit}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<nav id="nav"></nav>
+<dialog id="modal"></dialog>
+<script>
+const $=id=>document.getElementById(id);
+let store=JSON.parse(localStorage.getItem('courier-kassa-v1')||'{}');
+let s={name:'',lang:'ru',courier:true,ops:[],goal:0,reserve:0,...store};
+let page='home',type=1,cat=0;
+const tr=(r,u)=>s.lang==='uz'?u:r;
+const fmt=n=>Number(n).toLocaleString('ru-RU');
+const save=()=>localStorage.setItem('courier-kassa-v1',JSON.stringify(s));
+const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const day=d=>new Date(d).toLocaleDateString('en-CA');
+const today=()=>day(Date.now());
+const cats=()=>type===1?[
+tr('Заказы','Buyurtmalar'),
+tr('Чаевые','Choychaqa'),
+tr('Подработка','Qo‘shimcha ish')
+]:[
+tr('Еда','Ovqat'),
+tr('Аренда байка','Velosiped ijarasi'),
+tr('Бензин','Benzin'),
+tr('Дом','Uy'),
+tr('Связь','Aloqa'),
+tr('Прочее','Boshqa')
+];
+
+function go(p){page=p;render()}
+function lang(l){s.lang=l;save();render()}
+
+function render(){
+let a=$('app');
+if(!s.name){
+$('nav').innerHTML='';
+a.innerHTML=`
+<h1>Courier_kassa</h1>
+<section>
+<h2>${tr('Добро пожаловать','Xush kelibsiz')}</h2>
+<button onclick="lang('ru')">Русский</button>
+<button onclick="lang('uz')">O‘zbekcha</button>
+<form id="onboard">
+<input id="nm" required maxlength="40" placeholder="${tr('Ваше имя','Ismingiz')}">
+<label>${tr('Вы курьер?','Kuryermisiz?')}</label>
+<select id="role">
+<option value="yes">${tr('Да','Ha')}</option>
+<option value="no">${tr('Нет','Yo‘q')}</option>
+</select>
+<button class="wide dark">${tr('Продолжить','Davom etish')}</button>
+</form>
+</section>`;
+$('onboard').onsubmit=e=>{
+e.preventDefault();
+s.name=$('nm').value.trim();
+if(!s.name)return;
+s.courier=$('role').value==='yes';
+save();
+go(s.courier?'home':'job');
+};
+return;
+}
+
+let ops=s.ops.filter(o=>day(o.date)===today());
+let inc=ops.filter(o=>o.type===1).reduce((a,o)=>a+o.amount,0);
+let out=ops.filter(o=>o.type===-1).reduce((a,o)=>a+o.amount,0);
+let bal=s.ops.reduce((a,o)=>a+o.type*o.amount,0);
+let left=inc-out-s.reserve;
+
+a.innerHTML=`
+<header>
+<b>Courier_kassa</b>
+<button onclick="lang(s.lang==='ru'?'uz':'ru')">${s.lang==='ru'?'O‘zbekcha':'Русский'}</button>
+</header>`;
+
+if(page==='home'){
+a.innerHTML+=`
+<div class="row">
+<div>
+<h1>${tr('Привет','Salom')}, ${esc(s.name)}!</h1>
+<small>${new Date().toLocaleDateString(s.lang==='uz'?'uz-UZ':'ru-RU')}</small>
+</div>
+<button class="dark">${tr('Баланс','Balans')}<br>${fmt(bal)} ${tr('сум','so‘m')}</button>
+</div>
+<p class="pill">${tr('Личная касса • данные на этом устройстве','Shaxsiy kassa • ma’lumotlar shu qurilmada')}</p>
+<section class="lime">
+<small>${tr('СЕГОДНЯ МОЖНО ПОТРАТИТЬ','BUGUN SARFLASH MUMKIN')}</small>
+<div class="money">${fmt(left)} <small style="font-size:16px">${tr('сум','so‘m')}</small></div>
+<progress max="${Math.max(1,inc)}" value="${Math.min(Math.max(1,inc),out+s.reserve)}"></progress>
+<div class="tiles">
+<div>${tr('Доход','Daromad')}<b>+${fmt(inc)}</b></div>
+<div>${tr('Отложено','Ajratilgan')}<b>−${fmt(s.reserve)}</b></div>
+<div>${tr('Расход','Xarajat')}<b>−${fmt(out)}</b></div>
+</div>
+<small>${fmt(inc)} − ${fmt(s.reserve)} − ${fmt(out)} = ${fmt(left)}</small>
+</section>
+<div class="actions">
+<button class="yellow" onclick="openAdd(1)">＋<br>${tr('Доход','Daromad')}</button>
+<button class="dark" onclick="openAdd(-1)">−<br>${tr('Расход','Xarajat')}</button>
+</div>
+<section>
+<h2>${tr('Операции сегодня','Bugungi operatsiyalar')} · ${ops.length}</h2>
+${ops.length?ops.slice().reverse().map(o=>`
+<div class="op">
+<span>${o.type===1?'🟡':'◯'}</span>
+<span>${esc(o.category)}<br><small>${new Date(o.date).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</small></span>
+<b class="${o.type===-1?'negative':''}">${o.type===1?'+':'−'}${fmt(o.amount)}</b>
+<button onclick="removeOp('${o.id}')">×</button>
+</div>`).join(''):tr('Пока нет операций','Hozircha operatsiyalar yo‘q')}
+</section>`;
+
+let ds=Array.from({length:7},(_,i)=>{
+let d=new Date();
+d.setDate(d.getDate()-6+i);
+return {
+label:d.toLocaleDateString(s.lang==='uz'?'uz-UZ':'ru-RU',{weekday:'short'}),
+v:s.ops.filter(o=>o.type===1&&day(o.date)===day(d)).reduce((a,o)=>a+o.amount,0)
+};
+});
+let max=Math.max(1,...ds.map(d=>d.v));
+a.innerHTML+=`
+<section class="dark">
+<h2>${tr('Неделя: доход','Hafta: daromad')}</h2>
+<div class="bars">
+${ds.map(d=>`<div class="bar">${fmt(d.v)}<i style="height:${d.v/max*72}px"></i>${d.label}</div>`).join('')}
+</div>
+</section>`;
+}
+else if(page==='goal'){
+a.innerHTML+=`
+<section>
+<h2>${tr('Цель и дневной план','Maqsad va kunlik reja')}</h2>
+<label>${tr('Финансовая цель','Moliyaviy maqsad')}</label>
+<input id="goal" type="number" min="0" value="${s.goal}">
+<label>${tr('Отложить сегодня','Bugun ajratish')}</label>
+<input id="reserve" type="number" min="0" value="${s.reserve}">
+<button class="wide dark" onclick="s.goal=Math.max(0,Number($('goal').value)||0);s.reserve=Math.max(0,Number($('reserve').value)||0);save();go('home')">${tr('Сохранить','Saqlash')}</button>
+</section>`;
+}
+else if(page==='news'){
+a.innerHTML+=`
+<section>
+<h2>${tr('Новости','Yangiliklar')}</h2>
+${tr('Пока нет публикаций','Hozircha yangiliklar yo‘q')}
+</section>`;
+}
+else if(page==='job'){
+a.innerHTML+=`
+<section>
+<h2>${tr('Трудоустройство','Ishga joylashish')}</h2>
+<p>${tr('Раздел готовится. Регистрация пока не проверяется автоматически.','Bo‘lim tayyorlanmoqda. Ro‘yxatdan o‘tish avtomatik tekshirilmaydi.')}</p>
+</section>`;
+}
+else{
+a.innerHTML+=`
+<section>
+<h2>${tr('Профиль','Profil')}</h2>
+<input id="rename" value="${esc(s.name)}">
+<button onclick="if($('rename').value.trim()){s.name=$('rename').value.trim();save();render()}">${tr('Сохранить имя','Ismni saqlash')}</button>
+<p><button onclick="go('job')">${tr('Трудоустройство','Ishga joylashish')}</button></p>
+<small>${tr('Локальная версия, без синхронизации','Mahalliy versiya, sinxronlashsiz')}</small>
+</section>`;
+}
+
+$('nav').innerHTML=`
+<button onclick="go('goal')">◎<br>${tr('Цель','Maqsad')}</button>
+<button onclick="go('news')">▤<br>${tr('Новости','Yangiliklar')}</button>
+<button class="plus" onclick="openAdd(1)">+</button>
+<button onclick="go('home')">▣<br>${tr('Касса','Kassa')}</button>
+<button onclick="go('profile')">◉<br>${tr('Я','Men')}</button>`;
+}
+
+function removeOp(id){
+if(confirm(tr('Удалить операцию?','Operatsiya o‘chirilsinmi?'))){
+s.ops=s.ops.filter(o=>o.id!==id);
+save();
+render();
+}
+}
+
+function openAdd(t){
+type=t;
+cat=0;
+drawModal();
+if(!$('modal').open)$('modal').showModal();
+}
+
+function drawModal(v=''){
+let m=$('modal');
+m.innerHTML=`
+<div class="row">
+<h2>${tr('Добавить','Qo‘shish')}</h2>
+<button onclick="$('modal').close()">×</button>
+</div>
+<div class="actions">
+<button class="${type===1?'yellow':''}" onclick="switchType(1)">${tr('Доход','Daromad')}</button>
+<button class="${type===-1?'dark':''}" onclick="switchType(-1)">${tr('Расход','Xarajat')}</button>
+</div>
+<form id="entry">
+<p>${tr('Сумма, сум','Summa, so‘m')}</p>
+<input id="amt" type="number" inputmode="numeric" min="1" step="1" required placeholder="0" value="${esc(v)}">
+<div class="row">
+${[10000,25000,50000,100000].map(n=>`<button type="button" onclick="$('amt').value=${n}">${fmt(n)}</button>`).join('')}
+</div>
+<p>${tr('Категория','Kategoriya')}</p>
+<div class="categories">
+${cats().map((c,i)=>`<button type="button" class="${cat===i?'selected':''}" onclick="cat=${i};drawModal($('amt').value)">${c}</button>`).join('')}
+</div>
+<button class="wide dark">${tr('Сохранить','Saqlash')}</button>
+</form>`;
+
+$('entry').onsubmit=e=>{
+e.preventDefault();
+let n=Number($('amt').value);
+if(!Number.isSafeInteger(n)||n<=0)return;
+s.ops.push({
+id:Date.now().toString()+Math.random().toString(36).slice(2),
+type,
+amount:n,
+category:cats()[cat],
+date:Date.now()
+});
+save();
+m.close();
+go('home');
+};
+}
+
+function switchType(t){
+let v=$('amt').value;
+type=t;
+cat=0;
+drawModal(v);
+}
+
+render();
+</script>
+</body>
+</html>
